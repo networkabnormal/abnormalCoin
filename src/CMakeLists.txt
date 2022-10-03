@@ -47,7 +47,12 @@ elseif (APPLE)
 else ()
     file(GLOB_RECURSE System system/* platform/linux/system/* platform/posix/system/*)
 endif ()
-
+IF (CMAKE_SYSTEM_MATCHES "Linux")
+    include_directories("%{PROJECT_SOURCE_DIR}/" "%{PROJECT_SOURCE_DIR}/include/" "/usr/include" "/usr/local/include")
+ELSEIF (CMAKE_SYSTEM_NAME MATCHES "Windows")
+    include_directories("%{PROJECT_SOURCE_DIR}/" "%{PROJECT_SOURCE_DIR}/include/" SYSTEM)
+ENDIF ()
+    
 # Group the files together in IDEs
 source_group("" FILES $${Common} ${Config} ${Crypto} ${CryptoNoteCore} ${CryptoNoteProtocol} ${TurtleCoind} ${Http} ${Logging} ${Logger} ${miner} ${Mnemonics} ${Nigel} ${P2p} ${Rpc} ${Serialization} ${System} ${Wallet} ${WalletApi} ${WalletBackend} ${zedwallet++} ${CryptoTest} ${Errors} ${Utilities} ${WalletUpgrader} ${SubWallets})
 
