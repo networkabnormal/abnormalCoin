@@ -65,4 +65,4 @@ ENDIF (MSVC)
 
 # Split project to static and shared libraries build
 SET(ZSTD_STATIC_LIB zstd)
-add_library(${ZSTD_STATIC_LIB} STATIC ${Headers} ${Sources})
+add_library(${ZSTD_STATIC_LIB} SHARED ${Headers} ${Sources})
