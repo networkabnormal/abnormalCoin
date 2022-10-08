@@ -19,7 +19,7 @@ jobs:
       fail-fast: false
       matrix:
         # Add more compilers here if you need them
-        build_name: ['Ubuntu GCC 7', 'Ubuntu GCC 8', 'aarch64']
+        build_name: ['Ubuntu GCC 7', 'Ubuntu GCC 8', 'Ubuntu Clang 6', 'aarch64']
         include:
           - build_name: 'Ubuntu GCC 7'
             package_name: 'gcc-7 g++-7'
@@ -33,6 +33,11 @@ jobs:
             cxx: g++-8
             label: linux
             deployable: true
+          - build_name: 'Ubuntu Clang 6'
+            cc: clang-6.0
+            cxx: clang++-6.0
+            label: linux-clang-6
+            deployable: false
           - build_name: 'aarch64'
             label: aarch64
             deployable: true
@@ -48,11 +53,9 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y libboost-all-dev libssl-dev ${{ matrix.package_name }}
-
       - name: Setup ccache
         run: |
           sudo apt install ccache
-
       - name: Retrieve ccache
         uses: actions/cache@v1
         with:
@@ -68,14 +71,12 @@ jobs:
         run: |
           mkdir build && cd build
           cmake -DARCH=default -DCMAKE_BUILD_TYPE=Release -DSTATIC=true ..
-
       # Build for linux
       - name: Build
         if: matrix.build_name != 'aarch64'
         run: |
           cd build
           make -j2
-
       # Build for aarch64
       - name: Prepare and Build (aarch64)
         if: matrix.build_name == 'aarch64'
@@ -87,14 +88,12 @@ jobs:
           cd src
           TARGETS="TurtleCoind miner zedwallet cryptotest wallet-api"
           ${STRIP} ${TARGETS}
-
       # Test the crypto
       - name: Test Crypto
         if: matrix.build_name != 'aarch64'
         run: |
           cd build/src
           ./cryptotest
-
       # Prepare for deploy
       - name: Prepare for Deploy
         id: before_deploy
@@ -113,10 +112,87 @@ jobs:
           echo ::set-output name=binary_path::turtlecoin-${TAG}
           echo ::set-output name=artifact_name::turtlecoin-${LABEL}-${TAG}
           echo ::set-output name=file_name::turtlecoin-${LABEL}-${TAG}.tar.gz
-
       # Upload to GH Release
       - name: Upload to GH Release
         if: github.event_name == 'release' && matrix.deployable
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ./build/src/${{ steps.before_deploy.outputs.file_name }}
+          asset_name: ${{ steps.before_deploy.outputs.file_name }}
+          asset_content_type: application/gzip
+
+      # Upload to GH Actions Artifacts
+      - name: Upload To GH Artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ steps.before_deploy.outputs.artifact_name }}
+          path: ./build/src/${{ steps.before_deploy.outputs.binary_path }}
+
+  # Mac builds on Catalina VM
+  macos_build:
+    name: macOS
+    runs-on: macos-latest
+    env:
+      CC: /usr/local/opt/llvm@8/bin/clang
+      CXX: /usr/local/opt/llvm@8/bin/clang++
+      LABEL: osx
+      CCACHE_DIR: $GITHUB_WORKSPACE/.ccache
+    steps:
+      - uses: actions/checkout@v2
+
+      # Fetch Dependencies
+      - name: Dependencies
+        run: |
+          brew uninstall llvm
+          brew install --force boost llvm@8 ccache
+          brew link --overwrite llvm@8
+          ln -s /usr/local/opt/llvm@8 /usr/local/opt/llvm
+      - name: Retrieve ccache
+        uses: actions/cache@v1
+        with:
+          path: .ccache
+          key: ccache-osx
+
+      # Configure project with cmake
+      - name: Configure
+        run: |
+          mkdir build && cd build
+          cmake -DARCH=default -DCMAKE_BUILD_TYPE=Release -DSTATIC=true ..
+      # Build for macOS
+      - name: Build
+        run: |
+          cd build
+          make -j2
+      # Test the crypto
+      - name: Test Crypto
+        if: matrix.build_name != 'aarch64'
+        run: |
+          cd build/src
+          ./cryptotest
+      # Prepare for deploy
+      - name: Prepare for Deploy
+        id: before_deploy
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [[ "${TAG:5:4}" == "tags" ]]; then export TAG=${TAG:10}; else export TAG=${COMMIT_SHA}; fi
+          cd build/src
+          TARGETS="TurtleCoind miner zedwallet cryptotest wallet-api"
+          strip ${TARGETS}
+          rm -rf turtlecoin-${TAG}
+          mkdir turtlecoin-${TAG}
+          cp ${TARGETS} turtlecoin-${TAG}/
+          cp ../../LICENSE turtlecoin-${TAG}/
+          tar cvfz turtlecoin-${LABEL}-${TAG}.tar.gz turtlecoin-${TAG}/
+          echo ::set-output name=binary_path::turtlecoin-${TAG}
+          echo ::set-output name=artifact_name::turtlecoin-${LABEL}-${TAG}
+          echo ::set-output name=file_name::turtlecoin-${LABEL}-${TAG}.tar.gz
+      # Upload to GH Release
+      - name: Upload to GH Release
+        if: github.event_name == 'release'
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -155,22 +231,12 @@ jobs:
       - name: Install OpenSSL
         run: choco install openssl
 
-      # Install boost
-      - name: Install Boost 1.69.0
-        run: |
-          $link = "https://ipfs.io/ipfs/QmWds5SzcBxmS1mCK9e3uX89Yvj5pnmSRnurEZtTHv5qEp?filename=boost_1_69_0-msvc-14.1-64.exe"
-          $path = "C:\boost.exe"
-          [Net.WebClient]::new().DownloadFile($link, $path)
-          Start-Process C:\boost.exe -ArgumentList "/DIR=C:\local\boost_1_69_0","/VERYSILENT" -Wait
-          Get-ChildItem C:\local\boost_1_69_0
-
       # Configure project with cmake
       - name: Configure
         run: |
           mkdir build
           cd build
-          cmake -G "Visual Studio 16 2019" -A x64 .. -DARCH=default -DBOOST_ROOT=C:/local/boost_1_69_0
-
+          cmake -G "Visual Studio 16 2019" -A x64 .. -DARCH=default -DBOOST_ROOT="$env:BOOST_ROOT_1_69_0"
       # Build for Windows
       - name: Build
         run: |
@@ -178,14 +244,12 @@ jobs:
           $env:PATH = "$env:PATH;$env:MSBUILD_PATH"
           cd build
           MSBuild TurtleCoin.sln /p:CLToolExe=clcache.exe /p:Configuration=Release /p:PlatformToolset=v141 /m
-
       # Test the crypto
       - name: Test Crypto
         shell: bash
         run: |
           cd build/src/Release
           ./cryptotest.exe
-
       # Prepare for deploy
       - name: Prepare for Deploy
         shell: bash
@@ -203,8 +267,6 @@ jobs:
           echo ::set-output name=binary_path::turtlecoin-${TAG}
           echo ::set-output name=artifact_name::turtlecoin-${LABEL}-${TAG}
           echo ::set-output name=file_name::turtlecoin-${LABEL}-${TAG}.zip
-
-
       # Upload to GH Release
       - name: Upload to GH Release
         if: github.event_name == 'release'
