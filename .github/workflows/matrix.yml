@@ -230,13 +230,6 @@ jobs:
 
       - name: Install OpenSSL
         run: choco install openssl
-        
-      - name: Building boost
-        run:  |
-            git clone https://github.com/boostorg/boost.git boost
-            cd boost
-            ./bootstrap.bat
-            ./b2.exe install
 
       # Configure project with cmake
       - name: Configure
