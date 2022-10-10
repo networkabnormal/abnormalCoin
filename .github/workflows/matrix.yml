@@ -231,8 +231,12 @@ jobs:
       - name: Install OpenSSL
         run: choco install openssl
         
-      - name: Install boost
-        run: choco install boost-msvc-14.3 1.80.0
+      - name: Building boost
+        run:  |
+            git clone https://github.com/boostorg/boost.git boost
+            cd boost
+            ./bootstrap.bat
+            ./b2 install
 
       # Configure project with cmake
       - name: Configure
